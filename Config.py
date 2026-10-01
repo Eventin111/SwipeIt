@@ -39,7 +39,6 @@ class BackendSettings(BaseSettings):
     TRYON_CLEANUP_INTERVAL_SECONDS: int = 3600
     TRYON_CLEANUP_BATCH_SIZE: int = 50
     TRYON_DEAD_LETTER_MAX_ITEMS: int = 100
-    TRYON_ENABLED: bool = True
     TRYON_REQUIRE_CUDA: bool = False
     TRYON_WORKER_HEARTBEAT_KEY: str = "tryon:worker:heartbeat"
     TRYON_WORKER_HEARTBEAT_TTL_SECONDS: int = 30

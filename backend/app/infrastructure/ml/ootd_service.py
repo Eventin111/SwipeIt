@@ -18,6 +18,10 @@ if str(ML_ROOT) not in sys.path:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from run.ootd_app.adapters import DiffusionAdapter, OpenPoseAdapter, ParsingAdapter
+from run.ootd_app.entities import InferenceRequest
+from run.ootd_app.usecases import RunOOTDInference
+
 
 class OOTDService:
     """
@@ -35,9 +39,6 @@ class OOTDService:
     def _ensure_initialized(self):
         """Ленивая инициализация компонентов модели."""
         if self._runner is None:
-            from swipeit_ml.application.usecases.run_ootd_inference import RunOOTDInference
-            from swipeit_ml.infrastructure.adapters import DiffusionAdapter, OpenPoseAdapter, ParsingAdapter
-
             self._openpose = OpenPoseAdapter(self.gpu_id)
             self._parsing = ParsingAdapter(self.gpu_id)
             self._diffusion = DiffusionAdapter(self.gpu_id, "hd")
@@ -85,8 +86,6 @@ class OOTDService:
 
             if model_type == "hd" and category != 0:
                 raise ValueError("model_type 'hd' requires category == 0")
-
-            from swipeit_ml.domain.entities import InferenceRequest
 
             request = InferenceRequest(
                 gpu_id=self.gpu_id,

@@ -55,8 +55,6 @@ router = APIRouter()
 
 
 def get_tryon_use_case() -> TryOnUseCase:
-    if not settings.TRYON_ENABLED:
-        raise HTTPException(status_code=503, detail="Примерка отключена в этом окружении. Остальные функции доступны.")
     ml_service = get_ootd_service()
     return TryOnUseCase(ml_service)
 

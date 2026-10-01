@@ -339,10 +339,6 @@ const TryOnPage = () => {
   };
 
   const handleTryOn = async () => {
-    if (!appConfig.tryOnEnabled) {
-      setError('Примерка отключена в локальном режиме. Можно проверить остальные функции приложения.');
-      return;
-    }
     if (user?.isGuest) {
       setError('Гостевой режим не поддерживает примерку. Войдите или зарегистрируйтесь.');
       return;
@@ -688,12 +684,11 @@ const TryOnPage = () => {
           <button className="tryon-btn tryon-btn--secondary" onClick={handlePickClothPhoto} disabled={isProcessing}>
             Загрузить одежду
           </button>
-          <button className="tryon-btn tryon-btn--primary" onClick={handleTryOn} disabled={!appConfig.tryOnEnabled || isProcessing || !profileModelPhoto || !(clothFile || clothPreview)}>
+          <button className="tryon-btn tryon-btn--primary" onClick={handleTryOn} disabled={isProcessing || !profileModelPhoto || !(clothFile || clothPreview)}>
             {isProcessing ? 'Создаем образ...' : 'Запустить примерку'}
           </button>
         </section>
 
-        {!appConfig.tryOnEnabled && <p role="status">Примерка отключена в локальном режиме. Модель не загружается.</p>}
         {!profileModelPhoto && <p>Для запуска добавьте основное фото в профиле.</p>}
         {!(clothFile || clothPreview) && <p>Для запуска выберите фотографию одежды.</p>}
         {error && <div role="alert" className="tryon-alert tryon-alert--error">{error}</div>}

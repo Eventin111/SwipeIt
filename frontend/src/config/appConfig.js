@@ -24,7 +24,6 @@ export const appConfig = Object.freeze({
   apiBaseUrl: resolveApiBaseUrl(),
   apiRequestTimeoutMs: toNumber(process.env.REACT_APP_API_TIMEOUT_MS, 15000),
   tryOnMaxProcessingSeconds: toNumber(process.env.REACT_APP_TRYON_MAX_PROCESSING_SECONDS, 0),
-  tryOnEnabled: toBoolean(process.env.REACT_APP_TRYON_ENABLED, true),
   useMockData: toBoolean(process.env.REACT_APP_USE_MOCK_DATA, false),
   mockDelayMs: toNumber(process.env.REACT_APP_MOCK_DELAY_MS, 200),
   authInitDelayMs: toNumber(process.env.REACT_APP_AUTH_INIT_DELAY_MS, 300),

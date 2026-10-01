@@ -62,6 +62,7 @@ def stub_ml_modules():
     enums_module.ModelType = ModelType
     enums_module.category_from_index = category_from_index
     usecases_module.RunOOTDInference = RunOOTDInference
+    usecases_pkg.RunOOTDInference = RunOOTDInference
 
     return {
         "swipeit_ml": ml_pkg,
@@ -119,9 +120,7 @@ def test_try_on_initializes_runner_once_and_returns_outputs(monkeypatch):
             executions.append(request)
             return types.SimpleNamespace(outputs=[Image.new("RGB", (20, 30), "white")])
 
-    monkeypatch.setattr(
-        sys.modules["swipeit_ml.application.usecases.run_ootd_inference"], "RunOOTDInference", FakeRunner
-    )
+    monkeypatch.setattr(module, "RunOOTDInference", FakeRunner)
 
     service = module.OOTDService(gpu_id=3)
     first = service.try_on(Image.new("RGB", (10, 10)), Image.new("RGB", (10, 10)), model_type="dc", category=2)

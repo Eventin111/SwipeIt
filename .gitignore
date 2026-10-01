@@ -222,6 +222,3 @@ ml/runs/
 *.pt
 *.pth
 *.uuid
-
-# Local development tools
-.tools/
