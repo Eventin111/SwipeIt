@@ -1,4 +1,5 @@
-import { isValidEmail, isValidUsername } from '../../core/domain/services/authPolicy';
+import HintedInput from '../../components/HintedInput/HintedInput';
+import { INPUT_RULES, inputError, capitalizeName } from '../../core/domain/services/authPolicy';
 import { useDraft, useUnloadWarning } from '../../hooks/useDraft';
 import { validateImage, IMAGE_ACCEPT } from '../../utils/validateImage';
 import React, { useState, useRef, useEffect } from 'react';
@@ -328,14 +329,18 @@ const ProfilePage = ({ onCommentCreated = null }) => {
       status: user?.status || ''
     });
     setProfileSavePhase('idle');
+    setUploadError('');
     setIsEditProfileOpen(true);
   };
 
   const handleEditProfileSubmit = async (event) => {
     event.preventDefault();
     if (isProfileSaving) return;
-    if (!isValidUsername(profileForm.username) || !isValidEmail(profileForm.email)) {
-      setUploadError('Введите корректный email и имя: 3–50 символов, буквы, цифры или подчёркивание.');
+    const changes = Object.fromEntries(Object.entries(profileForm).filter(([key, value]) => value !== (user?.[key] || '')));
+    const validationError = Object.entries(changes).map(([key, value]) => inputError(key, value)).find(Boolean);
+    if (validationError) {
+      setUploadError(validationError);
+      setProfileSavePhase('error');
       return;
     }
 
@@ -343,11 +348,7 @@ const ProfilePage = ({ onCommentCreated = null }) => {
     setProfileSavePhase('saving');
     setUploadError('');
     try {
-      await updateUserProfile({
-        username: profileForm.username.trim(),
-        email: profileForm.email.trim(),
-        status: String(profileForm.status || '').trim()
-      });
+      await updateUserProfile(changes);
       setProfileSavePhase('success');
       setTimeout(() => {
         setIsEditProfileOpen(false);
@@ -467,11 +468,12 @@ const ProfilePage = ({ onCommentCreated = null }) => {
     if (commentSubmitRef.current) return;
     const feedItemId = Number(commentsViewer.postId);
     const text = String(commentText || '').trim();
+    const commentError = inputError('comment', commentText);
     if (!Number.isInteger(feedItemId) || feedItemId <= 0) {
       return;
     }
-    if (!text) {
-      setCommentsViewer((prev) => ({ ...prev, error: 'Введите комментарий' }));
+    if (commentError) {
+      setCommentsViewer((prev) => ({ ...prev, error: commentError }));
       return;
     }
 
@@ -1258,21 +1260,23 @@ const ProfilePage = ({ onCommentCreated = null }) => {
           <div className="profile-modal-backdrop" onClick={closeProfileEditor}>
             <div className="profile-modal" onClick={(event) => event.stopPropagation()}>
               <h3>Редактировать профиль</h3>
-              <form onSubmit={handleEditProfileSubmit}>
+              <form noValidate onSubmit={handleEditProfileSubmit}>
                 <label className="profile-modal-label">
                   Username
-                  <input
+                  <HintedInput
                     className="profile-modal-input"
+                    hint={INPUT_RULES.username}
                     value={profileForm.username}
-                    onChange={(event) => setProfileForm((prev) => ({ ...prev, username: event.target.value }))}
+                    onChange={(event) => setProfileForm((prev) => ({ ...prev, username: capitalizeName(event.target.value) }))}
                     required
                   />
                 </label>
                 <label className="profile-modal-label">
                   Email
-                  <input
+                  <HintedInput
                     className="profile-modal-input"
                     type="email"
+                    hint={INPUT_RULES.email}
                     value={profileForm.email}
                     onChange={(event) => setProfileForm((prev) => ({ ...prev, email: event.target.value }))}
                     required
@@ -1280,10 +1284,11 @@ const ProfilePage = ({ onCommentCreated = null }) => {
                 </label>
                 <label className="profile-modal-label">
                   Статус
-                  <input
+                  <HintedInput
                     className="profile-modal-input"
+                    hint={INPUT_RULES.status}
                     value={profileForm.status}
-                    maxLength={160}
+                    maxLength={60}
                     onChange={(event) => setProfileForm((prev) => ({ ...prev, status: event.target.value }))}
                     placeholder="Например: Люблю streetwear и techwear"
                   />
@@ -1292,7 +1297,7 @@ const ProfilePage = ({ onCommentCreated = null }) => {
                   {profileSavePhase === 'idle' && 'Изменения еще не сохранены'}
                   {profileSavePhase === 'saving' && 'Сохраняем профиль...'}
                   {profileSavePhase === 'success' && 'Готово, профиль обновлен'}
-                  {profileSavePhase === 'error' && 'Ошибка сохранения'}
+                  {profileSavePhase === 'error' && <span role="alert">{uploadError}</span>}
                 </div>
                 <div className="profile-modal-actions">
                   <button type="button" className="profile-modal-cancel" onClick={closeProfileEditor}>
@@ -1475,8 +1480,9 @@ const ProfilePage = ({ onCommentCreated = null }) => {
                 </div>
               )}
               <div className="public-profile__comment-form">
-                <textarea
+                <HintedInput as="textarea"
                   maxLength={1000}
+                hint={INPUT_RULES.comment}
                   disabled={commentsViewer.submitting}
                   value={commentText}
                   placeholder="Оставьте комментарий..."

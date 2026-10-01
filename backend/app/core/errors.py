@@ -38,12 +38,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             message = f"минимум {limit} символов"
         elif kind == "value_error.any_str.max_length":
             message = f"максимум {limit} символов"
+        elif kind == "value_error" and field in {"username", "email", "password"}:
+            message = error["msg"]
         elif field == "email":
             message = "введите корректный адрес электронной почты"
         elif field == "username":
-            message = "используйте от 3 до 50 букв, цифр или подчёркиваний"
+            message = "используйте от 3 до 50 русских или английских букв"
         elif field == "password":
-            message = "минимум 6 символов без пробелов по краям, не только цифры; максимум 100 символов"
+            message = "от 6 до 100 русских или английских букв и цифр, без пробелов и знаков"
         else:
             message = "проверьте значение и допустимую длину"
         messages.append(f"{label}: {message}.")

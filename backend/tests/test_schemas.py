@@ -50,9 +50,9 @@ def test_garment_update_allows_partial_payload():
     assert garment.title is None
 
 
-def test_user_create_rejects_numeric_only_password():
-    with pytest.raises(ValidationError):
-        UserCreate(email="user@example.com", username="valid_name", password="123456")
+def test_user_create_accepts_numeric_password():
+    user = UserCreate(email="user@example.com", username="validname", password="123456")
+    assert user.username == "Validname"
 
 
 def test_user_update_rejects_invalid_username():

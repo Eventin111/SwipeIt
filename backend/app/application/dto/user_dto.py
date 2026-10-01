@@ -21,26 +21,40 @@ class UserBase(UsernameValidationMixin):
     username: str = Field(..., min_length=3, max_length=50, regex=r"^[a-zA-Z0-9_а-яА-ЯёЁ]+$")
 
 
-class UserCreate(UserBase):
+class UserInputRules(BaseModel):
+    @validator("username", pre=True, check_fields=False)
+    def validate_name(cls, value):
+        if not isinstance(value, str) or not re.fullmatch(r"[a-zA-Zа-яА-ЯёЁ]+", value):
+            raise ValueError("Только русские и английские буквы, без цифр, пробелов и знаков")
+        return value[:1].upper() + value[1:]
+
+    @validator("email", pre=True, check_fields=False)
+    def validate_email(cls, value):
+        if not isinstance(value, str) or not re.fullmatch(r"[a-zA-Z0-9_.@-]+", value):
+            raise ValueError("Разрешены только латинские буквы, цифры, дефис, подчёркивание, точка и @")
+        if value.count("@") != 1:
+            raise ValueError("Адрес должен содержать ровно один символ @")
+        if not re.fullmatch(
+            r"[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}", value
+        ):
+            raise ValueError("Укажите адрес в формате name@mail.ru: имя перед @ и домен после него")
+        return value
+
+
+class UserCreate(UserInputRules):
+    email: EmailStr
+    username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6, max_length=100)
 
     @validator("password")
     def password_strength(cls, value):
-        if len(value.strip()) < 6:
-            raise ValueError("Password must be at least 6 characters long")
-        if value.strip().isnumeric():
-            raise ValueError("Password cannot contain only digits")
+        if not re.fullmatch(r"[a-zA-Zа-яА-ЯёЁ0-9]+", value):
+            raise ValueError("Только русские и английские буквы и цифры, без пробелов и знаков")
         return value
 
 
-class UserUpdate(UsernameValidationMixin):
+class UserUpdate(UserInputRules):
     email: Optional[EmailStr] = None
-    username: Optional[str] = Field(None, min_length=3, max_length=50, regex=r"^[a-zA-Z0-9_а-яА-ЯёЁ]+$")
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
     avatar_url: Optional[str] = None
-    status: Optional[str] = Field(None, max_length=160)
-
-    @validator("email", pre=True)
-    def email_not_null(cls, value):
-        if value is None:
-            raise ValueError("Укажите адрес электронной почты")
-        return value
+    status: Optional[str] = Field(None, max_length=60)

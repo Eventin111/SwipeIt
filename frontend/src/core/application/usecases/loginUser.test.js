@@ -4,7 +4,7 @@ describe('loginUser use-case', () => {
   it('throws when email is invalid', async () => {
     const repo = { login: jest.fn() };
     await expect(loginUser(repo, { email: 'invalid', password: '123456' })).rejects.toThrow(
-      'Введите корректный email'
+      'Почта должна содержать ровно один символ @.'
     );
   });
 

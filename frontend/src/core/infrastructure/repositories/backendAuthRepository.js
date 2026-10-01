@@ -11,7 +11,7 @@ const extractErrorMessage = (error, fallback) => {
   return message || fallback;
 };
 
-const sanitizeGuestUsername = () => `guest_user_${Math.floor(Date.now() / 1000)}`;
+const sanitizeGuestUsername = () => `Guest${Array.from(crypto.getRandomValues(new Uint8Array(12)), (n) => String.fromCharCode(97 + n % 26)).join('')}`;
 
 export const createBackendAuthRepository = (deps = {}) => {
   const storage = deps.storage || createBrowserStorage();
@@ -68,7 +68,7 @@ export const createBackendAuthRepository = (deps = {}) => {
 
   const tryRegisterGuest = async ({ email, password }) => {
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      const username = attempt === 0 ? 'guest_user' : sanitizeGuestUsername();
+      const username = attempt === 0 ? 'Guest' : sanitizeGuestUsername();
       try {
         await apiFetch('/api/v1/auth/register', {
           method: 'POST',

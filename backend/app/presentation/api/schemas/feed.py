@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.application.dto.feed_dto import FeedItemBase, FeedItemCreate, FeedItemUpdate
 from app.presentation.api.schemas.garment import GarmentResponse
@@ -64,7 +64,7 @@ class FeedLikesResponse(BaseModel):
 
 
 class FeedCommentCreate(BaseModel):
-    text: str
+    text: str = Field(..., min_length=1, max_length=1000)
 
 
 class FeedCommentItem(BaseModel):

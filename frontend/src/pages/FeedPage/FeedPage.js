@@ -1,3 +1,5 @@
+import HintedInput from '../../components/HintedInput/HintedInput';
+import { INPUT_RULES, inputError } from '../../core/domain/services/authPolicy';
 import { useDraft } from '../../hooks/useDraft';
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -1027,13 +1029,14 @@ const FeedPage = () => {
     }
     const postId = Number(commentsPanel.postId);
     const text = String(commentText || '').trim();
+    const commentError = inputError('comment', commentText);
     if (!Number.isInteger(postId) || postId <= 0) {
       return;
     }
-    if (!text) {
+    if (commentError) {
       setCommentsPanel((prev) => ({
         ...prev,
-        error: 'Введите комментарий'
+        error: commentError
       }));
       return;
     }
@@ -1707,8 +1710,9 @@ const FeedPage = () => {
             )}
 
             <div className="feed-comment-form">
-              <textarea
+              <HintedInput as="textarea"
                 maxLength={1000}
+                hint={INPUT_RULES.comment}
                   disabled={commentsPanel.submitting}
                   value={commentText}
                 placeholder={commentsPanel.replyTo ? `Ответ для @${commentsPanel.replyTo.username}...` : 'Оставьте комментарий...'}

@@ -227,7 +227,7 @@ async def add_feed_item_comment(
     if not normalized_text:
         raise HTTPException(status_code=400, detail="Комментарий не должен быть пустым")
     if len(normalized_text) > 1000:
-        raise HTTPException(status_code=400, detail="Комментарий слишком длинный")
+        raise HTTPException(status_code=400, detail="Комментарий: максимум 1000 символов. Сократите текст.")
 
     comment = Comment(
         feed_item_id=feed_item_id,

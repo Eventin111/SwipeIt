@@ -53,12 +53,12 @@ def test_pixel_limit(monkeypatch):
 @pytest.mark.parametrize("password", ["      ", "  123456  ", "x" * 101])
 def test_invalid_registration_password(password):
     with pytest.raises(ValidationError):
-        UserCreate(email="valid@example.com", username="valid_user", password=password)
+        UserCreate(email="valid@example.com", username="Validuser", password=password)
 
 
 def test_normalize_username_and_reject_blank_wardrobe_title():
-    user = UserCreate(email="valid@example.com", username="  valid_user  ", password="password")
-    assert user.username == "valid_user"
+    user = UserCreate(email="valid@example.com", username="validuser", password="password")
+    assert user.username == "Validuser"
     with pytest.raises(ValidationError):
         WardrobeSaveFromPost(title="   ", image_url="https://example.com/a.jpg")
 

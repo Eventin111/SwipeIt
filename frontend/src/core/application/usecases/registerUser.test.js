@@ -5,14 +5,14 @@ describe('registerUser use-case', () => {
     const repo = { register: jest.fn() };
     await expect(
       registerUser(repo, { email: 'user@mail.com', password: '123456', username: 'ab' })
-    ).rejects.toThrow('Имя пользователя: минимум 3 символа, только буквы/цифры/подчеркивание');
+    ).rejects.toThrow('Имя должно содержать от 3 до 50 букв.');
   });
 
   it('throws for invalid email', async () => {
     const repo = { register: jest.fn() };
     await expect(
       registerUser(repo, { email: 'mail', password: '123456', username: 'alex' })
-    ).rejects.toThrow('Введите корректный email');
+    ).rejects.toThrow('Почта должна содержать ровно один символ @.');
   });
 
   it('calls repository for valid payload', async () => {
@@ -27,10 +27,9 @@ describe('registerUser use-case', () => {
     expect(result.user.id).toBe(2);
   });
 
-  it('throws when password contains only digits', async () => {
+  it('accepts numeric password and capitalizes username', async () => {
     const repo = { register: jest.fn() };
-    await expect(
-      registerUser(repo, { email: 'user@mail.com', password: '123456', username: 'alex' })
-    ).rejects.toThrow('Пароль не может состоять только из цифр');
+    await registerUser(repo, { email: 'user@mail.com', password: '123456', username: 'alex' });
+    expect(repo.register).toHaveBeenCalledWith({ email: 'user@mail.com', password: '123456', username: 'Alex' });
   });
 });

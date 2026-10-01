@@ -69,7 +69,7 @@ export const AuthProvider = ({ children }) => {
       return null;
     }
 
-    const nextUser = await authRepository.updateProfile({ ...user, ...partialUser });
+    const nextUser = await authRepository.updateProfile(partialUser);
     setUser(nextUser);
     localStorage.setItem(authKeys.user, JSON.stringify(nextUser));
     return nextUser;

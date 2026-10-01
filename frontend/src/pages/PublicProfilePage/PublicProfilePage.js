@@ -1,3 +1,5 @@
+import HintedInput from '../../components/HintedInput/HintedInput';
+import { INPUT_RULES, inputError } from '../../core/domain/services/authPolicy';
 import { useDraft } from '../../hooks/useDraft';
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -375,11 +377,12 @@ const PublicProfilePage = ({
     }
     const feedItemId = Number(commentsViewer.postId);
     const text = String(commentText || '').trim();
+    const commentError = inputError('comment', commentText);
     if (!Number.isInteger(feedItemId) || feedItemId <= 0) {
       return;
     }
-    if (!text) {
-      setCommentsViewer((prev) => ({ ...prev, error: 'Введите комментарий' }));
+    if (commentError) {
+      setCommentsViewer((prev) => ({ ...prev, error: commentError }));
       return;
     }
 
@@ -713,8 +716,9 @@ const PublicProfilePage = ({
               </div>
             )}
             <div className="public-profile__comment-form">
-              <textarea
+              <HintedInput as="textarea"
                 maxLength={1000}
+                hint={INPUT_RULES.comment}
                   disabled={commentsViewer.submitting}
                   value={commentText}
                 placeholder="Оставьте комментарий..."

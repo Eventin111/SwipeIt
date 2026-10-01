@@ -1,3 +1,5 @@
+import HintedInput from '../../components/HintedInput/HintedInput';
+import { INPUT_RULES, inputError } from '../../core/domain/services/authPolicy';
 import React, { useRef, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
@@ -10,6 +12,7 @@ const LoginPage = () => {
     email: '',
     password: ''
   });
+  const [touched, setTouched] = useState({});
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -27,6 +30,9 @@ const LoginPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setTouched({ username: true, email: true, password: true });
+    const validationError = inputError('email', formData.email) || (!formData.password ? 'Введите пароль.' : '');
+    if (validationError) { setError(validationError); return; }
     if (submitRef.current) return;
     submitRef.current = true;
     setMessage('');
@@ -77,11 +83,15 @@ const LoginPage = () => {
           <p className="subtitle">Войди в аккаунт</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="auth-form">
+        <form noValidate onSubmit={handleSubmit} className="auth-form">
           <div className="input-group">
-            <input
+            <HintedInput
               type="email"
               name="email"
+              hint={INPUT_RULES.email}
+              onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
+              aria-invalid={Boolean(touched.email && inputError('email', formData.email))}
+              aria-describedby="email-error"
               placeholder="Почта"
               value={formData.email}
               onChange={handleChange}
@@ -89,12 +99,17 @@ const LoginPage = () => {
               disabled={isLoading}
               className="auth-input"
             />
+            {touched.email && inputError('email', formData.email) && <small id="email-error" role="alert" className="error-message">{inputError('email', formData.email)}</small>}
           </div>
 
           <div className="input-group">
-            <input
+            <HintedInput
               type="password"
               name="password"
+              hint={'Пароль, указанный при регистрации.'}
+              onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
+              aria-invalid={Boolean(touched.password && (!formData.password ? 'Введите пароль.' : ''))}
+              aria-describedby="password-error"
               placeholder="Пароль"
               value={formData.password}
               onChange={handleChange}
@@ -102,6 +117,7 @@ const LoginPage = () => {
               disabled={isLoading}
               className="auth-input"
             />
+            {touched.password && (!formData.password ? 'Введите пароль.' : '') && <small id="password-error" role="alert" className="error-message">{(!formData.password ? 'Введите пароль.' : '')}</small>}
           </div>
 
           <button 
