@@ -20,6 +20,10 @@ export const registerUser = async (authRepository, payload) => {
     throw new Error('Пароль должен содержать не менее 6 символов');
   }
 
+  if (Array.from(password).length > 100) {
+    throw new Error('Пароль слишком длинный: максимум 100 символов.');
+  }
+
   if (!isPasswordNotOnlyDigits(password)) {
     throw new Error('Пароль не может состоять только из цифр');
   }

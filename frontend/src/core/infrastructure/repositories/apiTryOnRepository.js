@@ -1,3 +1,4 @@
+import { guardedFetch } from '../../../services/api/guardedFetch';
 import { appConfig } from '../../../config/appConfig';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -241,7 +242,7 @@ const imageInputToFile = async (input, fallbackName, options = {}) => {
   }
 
   if (typeof input === 'string') {
-    const response = await fetch(input);
+    const response = await guardedFetch(input);
     if (!response.ok) {
       throw new Error(`Failed to fetch image source: ${response.status}`);
     }
@@ -307,7 +308,7 @@ export const createApiTryOnRepository = () => ({
         headers.Authorization = `Bearer ${token}`;
       }
 
-      const response = await fetch(buildTryOnUrl(), {
+      const response = await guardedFetch(buildTryOnUrl(), {
         method: 'POST',
         headers,
         body: formData
@@ -315,7 +316,7 @@ export const createApiTryOnRepository = () => ({
 
       if (!response.ok) {
         const detail = await extractErrorDetail(response);
-        throw new Error(`Try-on request failed: ${response.status} ${detail}`);
+        throw new Error(typeof detail === 'string' && detail ? detail : 'Не удалось выполнить действие с примеркой.');
       }
 
       const payload = await response.json();
@@ -349,14 +350,14 @@ export const createApiTryOnRepository = () => ({
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(buildTryOnSessionStatusUrl(sessionId), {
+    const response = await guardedFetch(buildTryOnSessionStatusUrl(sessionId), {
       method: 'GET',
       headers
     });
 
     if (!response.ok) {
       const detail = await extractErrorDetail(response);
-      throw new Error(`Try-on session request failed: ${response.status} ${detail}`);
+      throw new Error(typeof detail === 'string' && detail ? detail : 'Не удалось выполнить действие с примеркой.');
     }
 
     const payload = await response.json();
@@ -370,14 +371,14 @@ export const createApiTryOnRepository = () => ({
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(buildTryOnSessionCancelUrl(sessionId), {
+    const response = await guardedFetch(buildTryOnSessionCancelUrl(sessionId), {
       method: 'POST',
       headers
     });
 
     if (!response.ok) {
       const detail = await extractErrorDetail(response);
-      throw new Error(`Try-on cancel request failed: ${response.status} ${detail}`);
+      throw new Error(typeof detail === 'string' && detail ? detail : 'Не удалось выполнить действие с примеркой.');
     }
 
     const payload = await response.json();
@@ -391,14 +392,14 @@ export const createApiTryOnRepository = () => ({
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(buildTryOnSessionStatusUrl(sessionId), {
+    const response = await guardedFetch(buildTryOnSessionStatusUrl(sessionId), {
       method: 'DELETE',
       headers
     });
 
     if (!response.ok) {
       const detail = await extractErrorDetail(response);
-      throw new Error(`Try-on delete request failed: ${response.status} ${detail}`);
+      throw new Error(typeof detail === 'string' && detail ? detail : 'Не удалось выполнить действие с примеркой.');
     }
 
     if (response.status === 204) {
@@ -419,7 +420,7 @@ export const createApiTryOnRepository = () => ({
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(buildTryOnSessionPublishUrl(sessionId), {
+    const response = await guardedFetch(buildTryOnSessionPublishUrl(sessionId), {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -432,7 +433,7 @@ export const createApiTryOnRepository = () => ({
 
     if (!response.ok) {
       const detail = await extractErrorDetail(response);
-      throw new Error(`Try-on publish request failed: ${response.status} ${detail}`);
+      throw new Error(typeof detail === 'string' && detail ? detail : 'Не удалось выполнить действие с примеркой.');
     }
 
     return response.json();

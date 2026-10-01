@@ -1,3 +1,4 @@
+import { guardedFetch } from '../../../services/api/guardedFetch';
 import { appConfig } from '../../../config/appConfig';
 
 const getAuthToken = () => localStorage.getItem(appConfig.authStorageKeys.token);
@@ -38,7 +39,7 @@ const requestWithAuth = async (path, init = {}, defaultErrorMessage) => {
     throw new Error('Нужно войти в аккаунт, чтобы работать с медиа.');
   }
 
-  const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
+  const response = await guardedFetch(`${appConfig.apiBaseUrl}${path}`, {
     ...init,
     headers: {
       ...(init.headers || {}),
@@ -68,7 +69,7 @@ export const createApiMediaRepository = () => ({
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${appConfig.apiBaseUrl}/api/v1/media/upload`, {
+    const response = await guardedFetch(`${appConfig.apiBaseUrl}/api/v1/media/upload`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`

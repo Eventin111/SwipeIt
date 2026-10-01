@@ -13,6 +13,7 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState('');
   const authKeys = appConfig.authStorageKeys;
 
   useEffect(() => {
@@ -25,8 +26,7 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(true);
         }
       } catch (err) {
-        console.error('Auth init error:', err);
-        clearAuth();
+        setAuthError(err.message || 'Не удалось проверить вход. Проверьте соединение и повторите попытку.');
       } finally {
         setTimeout(() => {
           setLoading(false);
@@ -98,7 +98,10 @@ export const AuthProvider = ({ children }) => {
       updateUserProfile,
       previewUserProfile
     }}>
-      {children}
+      {authError ? <div role="alert" className="tryon-alert tryon-alert--error">
+        <p>{authError}</p>
+        <button onClick={() => window.location.reload()}>Повторить</button>
+      </div> : children}
     </AuthContext.Provider>
   );
 };

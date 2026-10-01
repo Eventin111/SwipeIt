@@ -1,3 +1,4 @@
+import { guardedFetch } from '../../../services/api/guardedFetch';
 import { appConfig } from '../../../config/appConfig';
 
 const getAuthToken = () => localStorage.getItem(appConfig.authStorageKeys.token);
@@ -8,7 +9,7 @@ const request = async (path, init = {}) => {
     throw new Error('Нужно войти в аккаунт.');
   }
 
-  const response = await fetch(`${appConfig.apiBaseUrl}/api/v1/feed${path}`, {
+  const response = await guardedFetch(`${appConfig.apiBaseUrl}/api/v1/feed${path}`, {
     ...init,
     headers: {
       ...(init.headers || {}),

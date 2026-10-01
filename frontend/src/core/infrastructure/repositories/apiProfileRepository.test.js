@@ -78,7 +78,7 @@ describe('apiProfileRepository', () => {
       .mockResolvedValueOnce(errorResponse({ status: 503, text: 'service unavailable' }));
     const repository = createApiProfileRepository();
 
-    await expect(repository.fetchStats()).rejects.toThrow('boom');
-    await expect(repository.fetchStats()).rejects.toThrow('service unavailable');
+    await expect(repository.fetchStats()).rejects.toThrow('Сервис временно недоступен');
+    await expect(repository.fetchStats()).rejects.toThrow('Сервис временно недоступен');
   });
 });

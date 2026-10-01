@@ -68,7 +68,7 @@ describe('backendAuthRepository', () => {
     storage.setItem('swipelt_token', 'broken');
     storage.setItem('swipelt_user', '{"id":1}');
     storage.setItem('swipelt_is_guest', 'false');
-    apiFetch.mockRejectedValueOnce(new Error('unauthorized'));
+    apiFetch.mockRejectedValueOnce(Object.assign(new Error('unauthorized'), { status: 401 }));
 
     const repository = createBackendAuthRepository({ storage, config: createConfig() });
     const session = await repository.initializeSession();
@@ -77,6 +77,15 @@ describe('backendAuthRepository', () => {
     expect(storage.getItem('swipelt_token')).toBeNull();
     expect(storage.getItem('swipelt_user')).toBeNull();
     expect(storage.getItem('swipelt_is_guest')).toBeNull();
+  });
+
+  it('keeps credentials on a temporary connection failure', async () => {
+    const storage = createMemoryStorage();
+    storage.setItem('swipelt_token', 'valid-token');
+    apiFetch.mockRejectedValueOnce(new Error('Нет связи с сервером'));
+    const repository = createBackendAuthRepository({ storage, config: createConfig() });
+    await expect(repository.initializeSession()).rejects.toThrow('Нет связи с сервером');
+    expect(storage.getItem('swipelt_token')).toBe('valid-token');
   });
 
   it('logs in regular user', async () => {

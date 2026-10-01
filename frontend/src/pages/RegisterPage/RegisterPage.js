@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import './RegisterPage.css';
 
 const RegisterPage = () => {
+  const submitRef = useRef(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -24,6 +25,8 @@ const RegisterPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitRef.current) return;
+    submitRef.current = true;
     setMessage('');
     setError('');
     setIsLoading(true);
@@ -37,6 +40,7 @@ const RegisterPage = () => {
     } catch (err) {
       setError(err.message || 'Не удалось зарегистрироваться');
     } finally {
+      submitRef.current = false;
       setIsLoading(false);
     }
   };
@@ -59,6 +63,7 @@ const RegisterPage = () => {
               onChange={handleChange}
               required
               minLength="3"
+              maxLength="50"
               disabled={isLoading}
               className="auth-input"
             />
@@ -97,7 +102,7 @@ const RegisterPage = () => {
         </form>
 
         {message && <p className="success-message">{message}</p>}
-        {error && <p className="error-message">{error}</p>}
+        {error && <p role="alert" className="error-message">{error}</p>}
 
         <div className="auth-footer">
           <p>

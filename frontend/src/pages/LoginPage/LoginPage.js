@@ -1,10 +1,11 @@
-import React, { useState, useContext } from 'react';
+import React, { useRef, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import { appConfig } from '../../config/appConfig';
 import './LoginPage.css';
 
 const LoginPage = () => {
+  const submitRef = useRef(false);
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -26,6 +27,8 @@ const LoginPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitRef.current) return;
+    submitRef.current = true;
     setMessage('');
     setError('');
     setIsLoading(true);
@@ -40,12 +43,15 @@ const LoginPage = () => {
       console.error('Login error:', err);
       setError(err.message || 'Произошла ошибка при входе');
     } finally {
+      submitRef.current = false;
       setIsLoading(false);
     }
   };
 
   // Вход как гость
   const handleGuestLogin = async () => {
+    if (submitRef.current) return;
+    submitRef.current = true;
     setIsLoading(true);
     try {
       await login(appConfig.guestAccount.email, appConfig.guestAccount.password);
@@ -58,6 +64,7 @@ const LoginPage = () => {
       console.error('Guest login error:', err);
       setError('Ошибка входа как гостя');
     } finally {
+      submitRef.current = false;
       setIsLoading(false);
     }
   };
@@ -121,7 +128,7 @@ const LoginPage = () => {
         </div>
 
         {message && <p className="success-message">{message}</p>}
-        {error && <p className="error-message">{error}</p>}
+        {error && <p role="alert" className="error-message">{error}</p>}
 
         <div className="auth-footer">
           <p>

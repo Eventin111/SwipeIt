@@ -18,7 +18,7 @@ function ForgotPasswordPage() {
         
         {submitted ? (
           <div className="success-message">
-            <p>Ссылка для восстановления пароля отправлена на {email}</p>
+            <p>Восстановление пароля пока недоступно. Письмо не отправлено.</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit}>

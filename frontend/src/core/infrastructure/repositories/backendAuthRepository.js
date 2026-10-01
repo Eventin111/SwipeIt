@@ -110,8 +110,11 @@ export const createBackendAuthRepository = (deps = {}) => {
         persistSession(token, user);
         return { token, user };
       } catch (error) {
-        clearSession();
-        return { token: null, user: null };
+        if (error.status === 401 || error.status === 403) {
+          clearSession();
+          return { token: null, user: null };
+        }
+        throw error;
       }
     },
 

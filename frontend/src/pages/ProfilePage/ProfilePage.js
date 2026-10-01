@@ -1,3 +1,6 @@
+import { isValidEmail, isValidUsername } from '../../core/domain/services/authPolicy';
+import { useDraft, useUnloadWarning } from '../../hooks/useDraft';
+import { validateImage, IMAGE_ACCEPT } from '../../utils/validateImage';
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -191,7 +194,7 @@ const compressImage = async (file, { maxSize = 1600, quality = 0.85 } = {}) => {
 const ProfilePage = ({ onCommentCreated = null }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout, isAuthenticated, updateUserProfile, previewUserProfile } = useAuth();
+  const { user, logout, isAuthenticated, updateUserProfile } = useAuth();
 
   const isGuest = user?.isGuest;
   const isStandaloneProfileRoute = location.pathname === '/profile';
@@ -201,7 +204,10 @@ const ProfilePage = ({ onCommentCreated = null }) => {
   
   const [tryOnPhotos, setTryOnPhotos] = useState(() => {
     const savedPhotos = localStorage.getItem('tryOnPhotos');
-    return savedPhotos ? JSON.parse(savedPhotos) : [];
+    try {
+      const photos = savedPhotos ? JSON.parse(savedPhotos) : [];
+      return Array.isArray(photos) ? photos : [];
+    } catch (error) { return []; }
   });
   const [primaryPhotoIndex, setPrimaryPhotoIndex] = useState(() => {
     const savedIndex = localStorage.getItem('primaryPhotoIndex');
@@ -210,6 +216,10 @@ const ProfilePage = ({ onCommentCreated = null }) => {
   const fileInputRef = useRef(null);
   const avatarInputRef = useRef(null);
   const [uploadError, setUploadError] = useState('');
+  const photoUploadRef = useRef(false);
+  const avatarUploadRef = useRef(false);
+  const [failedPhotoFiles, setFailedPhotoFiles] = useState([]);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [isPhotosLoading, setIsPhotosLoading] = useState(false);
   const [profileStats, setProfileStats] = useState({
     tryons_count: 0,
@@ -227,8 +237,8 @@ const ProfilePage = ({ onCommentCreated = null }) => {
   const [isTryOnDeleting, setIsTryOnDeleting] = useState(false);
   const [isPostDeletingId, setIsPostDeletingId] = useState(null);
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
-  const [publishCaption, setPublishCaption] = useState('');
-  const [publishHashtags, setPublishHashtags] = useState('');
+  const [publishCaption, setPublishCaption] = useDraft(`publish:Caption:${user?.id}:${selectedTryOn?.session_id}`);
+  const [publishHashtags, setPublishHashtags] = useDraft(`publish:Hashtags:${user?.id}:${selectedTryOn?.session_id}`);
   const [publishPhase, setPublishPhase] = useState('idle');
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -257,6 +267,8 @@ const ProfilePage = ({ onCommentCreated = null }) => {
     text: '',
     error: ''
   });
+  const [commentText, setCommentText] = useDraft(`comment:${user?.id}:${commentsViewer.postId}`);
+  const commentSubmitRef = useRef(false);
   const [selectedPostPreview, setSelectedPostPreview] = useState(null);
 
   if (!isAuthenticated) {
@@ -300,6 +312,15 @@ const ProfilePage = ({ onCommentCreated = null }) => {
     navigate('/login');
   };
 
+  useUnloadWarning(isUploadingPhotos || failedPhotoFiles.length > 0 || isProfileSaving || Boolean(publishCaption || publishHashtags) ||
+    (isEditProfileOpen && (profileForm.username !== user?.username || profileForm.email !== user?.email || profileForm.status !== (user?.status || ''))) || Boolean(commentText));
+
+  const closeProfileEditor = () => {
+    if (isProfileSaving) return;
+    const changed = profileForm.username !== user?.username || profileForm.email !== user?.email || profileForm.status !== (user?.status || '');
+    if (!changed || window.confirm('Закрыть форму и потерять несохранённые изменения профиля?')) setIsEditProfileOpen(false);
+  };
+
   const handleEditProfileOpen = () => {
     setProfileForm({
       username: user?.username || '',
@@ -312,8 +333,9 @@ const ProfilePage = ({ onCommentCreated = null }) => {
 
   const handleEditProfileSubmit = async (event) => {
     event.preventDefault();
-    if (!profileForm.username || !profileForm.email) {
-      setUploadError('Заполните username и email');
+    if (isProfileSaving) return;
+    if (!isValidUsername(profileForm.username) || !isValidEmail(profileForm.email)) {
+      setUploadError('Введите корректный email и имя: 3–50 символов, буквы, цифры или подчёркивание.');
       return;
     }
 
@@ -374,6 +396,7 @@ const ProfilePage = ({ onCommentCreated = null }) => {
   };
 
   const handleOpenCommentsViewer = async (feedItemId, title = 'Комментарии') => {
+    if (commentSubmitRef.current) return;
     if (!feedItemId) {
       return;
     }
@@ -441,8 +464,9 @@ const ProfilePage = ({ onCommentCreated = null }) => {
   };
 
   const handleSubmitComment = async () => {
+    if (commentSubmitRef.current) return;
     const feedItemId = Number(commentsViewer.postId);
-    const text = String(commentsViewer.text || '').trim();
+    const text = String(commentText || '').trim();
     if (!Number.isInteger(feedItemId) || feedItemId <= 0) {
       return;
     }
@@ -451,9 +475,11 @@ const ProfilePage = ({ onCommentCreated = null }) => {
       return;
     }
 
+    commentSubmitRef.current = true;
     setCommentsViewer((prev) => ({ ...prev, submitting: true, error: '' }));
     try {
       const created = await feedRepository.addFeedItemComment(feedItemId, { text });
+      setCommentText('');
       setCommentsViewer((prev) => ({
         ...prev,
         items: [...(Array.isArray(prev.items) ? prev.items : []), created],
@@ -471,6 +497,8 @@ const ProfilePage = ({ onCommentCreated = null }) => {
         submitting: false,
         error: error?.message || 'Не удалось отправить комментарий'
       }));
+    } finally {
+      commentSubmitRef.current = false;
     }
   };
 
@@ -514,13 +542,13 @@ const ProfilePage = ({ onCommentCreated = null }) => {
         following_count: Number(statsPayload?.following_count || 0)
       }));
       setRecentTryOns(Array.isArray(recentPayload) ? recentPayload : []);
+      setPublishCaption('');
+      setPublishHashtags('');
       setPublishPhase('success');
       setTimeout(() => {
         setSelectedTryOn(null);
         setIsPublishDialogOpen(false);
       }, 900);
-      setPublishCaption('');
-      setPublishHashtags('');
     } catch (error) {
       setUploadError(error?.message || 'Не удалось опубликовать пост');
       setPublishPhase('error');
@@ -590,44 +618,31 @@ const ProfilePage = ({ onCommentCreated = null }) => {
   };
 
   const handlePhotoUpload = (e) => {
+    if (photoUploadRef.current) return;
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-
+    photoUploadRef.current = true;
+    setIsUploadingPhotos(true);
+    setFailedPhotoFiles([]);
     setUploadError('');
     void (async () => {
       try {
+        if (files.length > 10) throw new Error('Выберите не больше 10 фотографий за один раз.');
+        await Promise.all(files.map(validateImage));
         const preparedFiles = await Promise.all(
           files.map(async (file) => ({
-            originalName: file.name,
-            previewUrl: await readFileAsDataUrl(file),
             uploadFile: await compressImage(file)
           }))
         );
 
-        const tempPhotos = preparedFiles.map((item, index) => ({
-          id: `temp-${Date.now()}-${index}`,
-          mediaId: null,
-          url: item.previewUrl,
-          name: item.originalName,
-          date: new Date().toLocaleDateString(),
-          isUploading: true
-        }));
-
-        setTryOnPhotos((prevPhotos) => {
-          const updatedPhotos = [...prevPhotos, ...tempPhotos];
-          persistTryOnPhotos(updatedPhotos);
-
-          if (prevPhotos.length === 0 && updatedPhotos.length > 0) {
-            setPrimaryPhotoIndex(0);
-            persistPrimaryPhotoIndex(0);
-          }
-
-          return updatedPhotos;
-        });
-
-        const uploads = await Promise.all(
+        const uploads = await Promise.allSettled(
           preparedFiles.map((item) => uploadMedia(mediaRepository, item.uploadFile))
         );
+        const failed = uploads.filter((item) => item.status === 'rejected');
+        setFailedPhotoFiles(files.filter((file, index) => uploads[index].status === 'rejected'));
+        if (failed.length) {
+          setUploadError(`Не удалось загрузить ${failed.length} из ${files.length} фото. ${failed[0].reason?.message || ''}`);
+        }
 
         const canonicalPhotos = (await mediaRepository.fetchMyMedia())
           .filter((item) => !isTryOnMediaAsset(item))
@@ -642,6 +657,9 @@ const ProfilePage = ({ onCommentCreated = null }) => {
         persistPrimaryPhotoIndex(safeIndex);
       } catch (error) {
         setUploadError(error?.message || 'Не удалось загрузить фото');
+      } finally {
+        photoUploadRef.current = false;
+        setIsUploadingPhotos(false);
       }
     })();
     e.target.value = '';
@@ -649,6 +667,7 @@ const ProfilePage = ({ onCommentCreated = null }) => {
 
   const handleDeletePhoto = (index, e) => {
     e.stopPropagation();
+    if (!window.confirm('Удалить фотографию? Действие нельзя отменить.')) return;
     setUploadError('');
     void (async () => {
       try {
@@ -691,16 +710,17 @@ const ProfilePage = ({ onCommentCreated = null }) => {
   };
 
   const handleAvatarUpload = (e) => {
+    if (avatarUploadRef.current) return;
     const file = e.target.files?.[0];
     if (!file) {
       return;
     }
 
+    avatarUploadRef.current = true;
     setUploadError('');
     void (async () => {
       try {
-        const previewUrl = await readFileAsDataUrl(file);
-        previewUserProfile({ avatar: previewUrl });
+        await validateImage(file);
         const uploadFile = await compressImage(file, { maxSize: 1200, quality: 0.82 });
         const payload = await uploadMedia(mediaRepository, uploadFile);
         const avatarUrl = payload.upload_url || payload.media.public_url;
@@ -710,6 +730,8 @@ const ProfilePage = ({ onCommentCreated = null }) => {
         await updateUserProfile({ avatar: avatarUrl });
       } catch (error) {
         setUploadError(error?.message || 'Не удалось обновить аватар');
+      } finally {
+        avatarUploadRef.current = false;
       }
     })();
     e.target.value = '';
@@ -938,7 +960,9 @@ const ProfilePage = ({ onCommentCreated = null }) => {
           </div>
         ) : (
           <>
-            {uploadError && <div className="tryon-alert tryon-alert--error">{uploadError}</div>}
+            {uploadError && <div role="alert" className="tryon-alert tryon-alert--error">{uploadError}</div>}
+            {isUploadingPhotos && <p role="status">Загружаем фотографии…</p>}
+            {failedPhotoFiles.length > 0 && <button disabled={isUploadingPhotos} onClick={() => handlePhotoUpload({ target: { files: failedPhotoFiles, value: '' } })}>Повторить загрузку неотправленных фото ({failedPhotoFiles.length})</button>}
             <div className="profile-info">
               <div className="avatar-section">
                 <img 
@@ -953,7 +977,7 @@ const ProfilePage = ({ onCommentCreated = null }) => {
                   type="file"
                   ref={avatarInputRef}
                   onChange={handleAvatarUpload}
-                  accept="image/*"
+                  accept={IMAGE_ACCEPT}
                   style={{ display: 'none' }}
                 />
               </div>
@@ -994,7 +1018,7 @@ const ProfilePage = ({ onCommentCreated = null }) => {
                   type="file"
                   ref={fileInputRef}
                   onChange={handlePhotoUpload}
-                  accept="image/*"
+                  accept={IMAGE_ACCEPT}
                   multiple
                   style={{ display: 'none' }}
                 />
@@ -1231,7 +1255,7 @@ const ProfilePage = ({ onCommentCreated = null }) => {
         </div>
 
         {isEditProfileOpen && (
-          <div className="profile-modal-backdrop" onClick={() => setIsEditProfileOpen(false)}>
+          <div className="profile-modal-backdrop" onClick={closeProfileEditor}>
             <div className="profile-modal" onClick={(event) => event.stopPropagation()}>
               <h3>Редактировать профиль</h3>
               <form onSubmit={handleEditProfileSubmit}>
@@ -1271,7 +1295,7 @@ const ProfilePage = ({ onCommentCreated = null }) => {
                   {profileSavePhase === 'error' && 'Ошибка сохранения'}
                 </div>
                 <div className="profile-modal-actions">
-                  <button type="button" className="profile-modal-cancel" onClick={() => setIsEditProfileOpen(false)}>
+                  <button type="button" className="profile-modal-cancel" onClick={closeProfileEditor}>
                     Отмена
                   </button>
                   <button type="submit" className="edit-profile-btn" disabled={isProfileSaving}>
@@ -1354,6 +1378,7 @@ const ProfilePage = ({ onCommentCreated = null }) => {
               <textarea
                 className="profile-modal-input"
                 rows={4}
+                maxLength={2000}
                 value={publishCaption}
                 onChange={(event) => setPublishCaption(event.target.value)}
                 placeholder="Например: мой новый лук"
@@ -1451,9 +1476,11 @@ const ProfilePage = ({ onCommentCreated = null }) => {
               )}
               <div className="public-profile__comment-form">
                 <textarea
-                  value={commentsViewer.text}
+                  maxLength={1000}
+                  disabled={commentsViewer.submitting}
+                  value={commentText}
                   placeholder="Оставьте комментарий..."
-                  onChange={(event) => setCommentsViewer((prev) => ({ ...prev, text: event.target.value }))}
+                  onChange={(event) => setCommentText(event.target.value)}
                 />
                 <button type="button" className="edit-profile-btn" onClick={() => { void handleSubmitComment(); }} disabled={commentsViewer.submitting}>
                   {commentsViewer.submitting ? '...' : 'Отправить'}

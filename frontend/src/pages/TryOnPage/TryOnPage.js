@@ -1,3 +1,5 @@
+import { useDraft, useUnloadWarning } from '../../hooks/useDraft';
+import { validateImage, IMAGE_ACCEPT } from '../../utils/validateImage';
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { appConfig } from '../../config/appConfig';
@@ -120,9 +122,11 @@ const TryOnPage = () => {
   const [isSaved, setIsSaved] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
-  const [publishCaption, setPublishCaption] = useState('');
-  const [publishHashtags, setPublishHashtags] = useState('');
+  const [publishCaption, setPublishCaption] = useDraft(`publish:Caption:${user?.id}:${sessionId}`);
+  const [publishHashtags, setPublishHashtags] = useDraft(`publish:Hashtags:${user?.id}:${sessionId}`);
   const [publishPhase, setPublishPhase] = useState('idle');
+
+  useUnloadWarning(Boolean(clothFile) || isProcessing || Boolean(publishCaption || publishHashtags));
 
   const outfit = location.state?.outfit || {
     brand: 'Бренд не указан',
@@ -296,8 +300,6 @@ const TryOnPage = () => {
     setIsSaved(false);
     setIsPublished(false);
     setIsPublishModalOpen(false);
-    setPublishCaption('');
-    setPublishHashtags('');
     setPublishPhase('idle');
     terminalStatusSeenRef.current = false;
     timeoutHandledRef.current = false;
@@ -319,19 +321,33 @@ const TryOnPage = () => {
       return;
     }
 
-    setClothFile(file);
-    setResultImage('');
-    setError('');
-    setClothPreview(await fileToDataUrl(file));
-    event.target.value = '';
+    const input = event.target;
+    if (isProcessing) return;
+    try {
+      await validateImage(file);
+      const preview = await fileToDataUrl(file);
+      setClothFile(file);
+      setClothPreview(preview);
+      setResultImage('');
+      setSessionId(null);
+      setError('');
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      input.value = '';
+    }
   };
 
   const handleTryOn = async () => {
+    if (!appConfig.tryOnEnabled) {
+      setError('Примерка отключена в локальном режиме. Можно проверить остальные функции приложения.');
+      return;
+    }
     if (user?.isGuest) {
       setError('Гостевой режим не поддерживает примерку. Войдите или зарегистрируйтесь.');
       return;
     }
-    if (requestInFlightRef.current) {
+    if (requestInFlightRef.current || isProcessing) {
       return;
     }
 
@@ -361,8 +377,6 @@ const TryOnPage = () => {
     setIsSaved(false);
     setIsPublished(false);
     setIsPublishModalOpen(false);
-    setPublishCaption('');
-    setPublishHashtags('');
     setPublishPhase('idle');
     terminalStatusSeenRef.current = false;
     timeoutHandledRef.current = false;
@@ -380,6 +394,7 @@ const TryOnPage = () => {
         seed: -1
       });
 
+      setSessionId(payload.sessionId || null);
       if (payload.resultUrl) {
         terminalStatusSeenRef.current = true;
         setServerStatus(payload.status || 'completed');
@@ -416,7 +431,7 @@ const TryOnPage = () => {
   };
 
   const handlePublishResult = async () => {
-    if (!sessionId || isPublishing) {
+    if (!sessionId || !resultImage || isPublishing || isPublished) {
       return;
     }
 
@@ -438,6 +453,8 @@ const TryOnPage = () => {
       });
       setIsSaved(true);
       setIsPublished(true);
+      setPublishCaption('');
+      setPublishHashtags('');
       setPublishPhase('success');
       setTimeout(() => {
         setIsPublishModalOpen(false);
@@ -455,6 +472,7 @@ const TryOnPage = () => {
       return;
     }
 
+    if (!window.confirm('Удалить эту примерку? Действие нельзя отменить.')) return;
     setError('');
     try {
       await deleteTryOnSession(tryOnRepository, sessionId);
@@ -547,7 +565,7 @@ const TryOnPage = () => {
           terminalStatusSeenRef.current = true;
           closeTryOnSocket();
           setIsProcessing(false);
-          setError('Примерка заняла слишком много времени. Попробуйте еще раз.');
+          setError('Ожидание затянулось. Примерка может продолжаться на сервере — проверьте недавние примерки в профиле.');
         }
         return next;
       });
@@ -667,15 +685,18 @@ const TryOnPage = () => {
           <button className="tryon-btn tryon-btn--secondary" onClick={goToProfileWithNav}>
             Выбрать фото в профиле
           </button>
-          <button className="tryon-btn tryon-btn--secondary" onClick={handlePickClothPhoto}>
+          <button className="tryon-btn tryon-btn--secondary" onClick={handlePickClothPhoto} disabled={isProcessing}>
             Загрузить одежду
           </button>
-          <button className="tryon-btn tryon-btn--primary" onClick={handleTryOn} disabled={isProcessing}>
+          <button className="tryon-btn tryon-btn--primary" onClick={handleTryOn} disabled={!appConfig.tryOnEnabled || isProcessing || !profileModelPhoto || !(clothFile || clothPreview)}>
             {isProcessing ? 'Создаем образ...' : 'Запустить примерку'}
           </button>
         </section>
 
-        {error && <div className="tryon-alert tryon-alert--error">{error}</div>}
+        {!appConfig.tryOnEnabled && <p role="status">Примерка отключена в локальном режиме. Модель не загружается.</p>}
+        {!profileModelPhoto && <p>Для запуска добавьте основное фото в профиле.</p>}
+        {!(clothFile || clothPreview) && <p>Для запуска выберите фотографию одежды.</p>}
+        {error && <div role="alert" className="tryon-alert tryon-alert--error">{error}</div>}
 
         {isProcessing && (
           <section className="tryon-card tryon-card--status">
@@ -747,6 +768,7 @@ const TryOnPage = () => {
               <p className="profile-modal-date">Добавьте подпись к посту (необязательно)</p>
               <textarea
                 className="profile-modal-input"
+                maxLength={2000}
                 value={publishCaption}
                 onChange={(event) => setPublishCaption(event.target.value)}
                 rows={4}
@@ -782,7 +804,7 @@ const TryOnPage = () => {
         <input
           ref={clothInputRef}
           type="file"
-          accept="image/*"
+          accept={IMAGE_ACCEPT}
           style={{ display: 'none' }}
           onChange={handleClothChange}
         />

@@ -17,13 +17,43 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
     logger.warning(f"Ошибка валидации: {errors}")
 
-    return JSONResponse(status_code=422, content={"detail": "Ошибка валидации данных", "errors": errors})
+    labels = {
+        "email": "Почта",
+        "username": "Имя пользователя",
+        "password": "Пароль",
+        "caption": "Подпись",
+        "text": "Комментарий",
+        "status": "Статус",
+        "hashtags": "Хештеги",
+    }
+    messages = []
+    for error in exc.errors():
+        field = str(error["loc"][-1])
+        label = labels.get(field, "Поле " + field)
+        kind = error["type"]
+        limit = error.get("ctx", {}).get("limit_value")
+        if kind == "value_error.missing":
+            message = "заполните обязательное поле"
+        elif kind == "value_error.any_str.min_length":
+            message = f"минимум {limit} символов"
+        elif kind == "value_error.any_str.max_length":
+            message = f"максимум {limit} символов"
+        elif field == "email":
+            message = "введите корректный адрес электронной почты"
+        elif field == "username":
+            message = "используйте от 3 до 50 букв, цифр или подчёркиваний"
+        elif field == "password":
+            message = "минимум 6 символов без пробелов по краям, не только цифры; максимум 100 символов"
+        else:
+            message = "проверьте значение и допустимую длину"
+        messages.append(f"{label}: {message}.")
+    return JSONResponse(status_code=422, content={"detail": " ".join(messages), "errors": errors})
 
 
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Обработчик HTTP исключений"""
     logger.warning(f"HTTP ошибка {exc.status_code}: {exc.detail}")
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
 
 
 async def global_exception_handler(request: Request, exc: Exception):

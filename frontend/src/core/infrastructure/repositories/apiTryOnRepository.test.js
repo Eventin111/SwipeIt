@@ -105,7 +105,7 @@ describe('apiTryOnRepository', () => {
 
     expect(payload.sessionId).toBe(33);
     expect(payload.resultUrl).toBe('http://localhost:8000/media/tryon/result.png');
-    expect(global.fetch).toHaveBeenNthCalledWith(1, 'https://example.com/model.png');
+    expect(global.fetch).toHaveBeenNthCalledWith(1, 'https://example.com/model.png', expect.objectContaining({ signal: expect.anything() }));
     expect(global.fetch).toHaveBeenNthCalledWith(
       2,
       'http://localhost:8000/api/v1/tryon/try-on',
@@ -122,7 +122,7 @@ describe('apiTryOnRepository', () => {
         modelImage: new File(['model'], 'model.png', { type: 'image/png' }),
         clothImage: new File(['cloth'], 'cloth.jpg', { type: 'image/jpeg' })
       })
-    ).rejects.toThrow('Сетевой доступ к API недоступен');
+    ).rejects.toThrow('Нет связи с сервером');
   });
 
   it('throws a detailed error when image source fetch fails', async () => {
@@ -152,14 +152,14 @@ describe('apiTryOnRepository', () => {
     const repository = createApiTryOnRepository();
 
     await expect(repository.getTryOnSession(55)).resolves.toEqual({ id: 55, status: 'completed' });
-    await expect(repository.getTryOnSession(55)).rejects.toThrow('Try-on session request failed: 500 boom');
+    await expect(repository.getTryOnSession(55)).rejects.toThrow('Сервис временно недоступен. Попробуйте позже.');
   });
 
   it('falls back to response text when try-on session error is not json', async () => {
     global.fetch.mockResolvedValueOnce(errorResponse({ status: 503, text: 'service unavailable', jsonFails: true }));
     const repository = createApiTryOnRepository();
 
-    await expect(repository.getTryOnSession(55)).rejects.toThrow('Try-on session request failed: 503 service unavailable');
+    await expect(repository.getTryOnSession(55)).rejects.toThrow('Сервис временно недоступен. Попробуйте позже.');
   });
 
   it('subscribes to websocket events and routes handlers', () => {
@@ -204,7 +204,7 @@ describe('apiTryOnRepository', () => {
         modelImage: new File(['model'], 'model.png', { type: 'image/png' }),
         clothImage: new File(['cloth'], 'cloth.jpg', { type: 'image/jpeg' })
       })
-    ).rejects.toThrow('Try-on request failed: 422 bad input');
+    ).rejects.toThrow('bad input');
   });
 
   it('falls back to response text when try-on request error is not json', async () => {
@@ -216,7 +216,7 @@ describe('apiTryOnRepository', () => {
         modelImage: new File(['model'], 'model.png', { type: 'image/png' }),
         clothImage: new File(['cloth'], 'cloth.jpg', { type: 'image/jpeg' })
       })
-    ).rejects.toThrow('Try-on request failed: 502 upstream fail');
+    ).rejects.toThrow('Сервис временно недоступен. Попробуйте позже.');
   });
 
   it('cancels try-on session and returns normalized payload', async () => {
@@ -255,7 +255,7 @@ describe('apiTryOnRepository', () => {
     global.fetch.mockResolvedValueOnce(errorResponse({ status: 409, text: 'already completed', jsonFails: true }));
     const repository = createApiTryOnRepository();
 
-    await expect(repository.cancelTryOnSession(3)).rejects.toThrow('Try-on cancel request failed: 409 already completed');
+    await expect(repository.cancelTryOnSession(3)).rejects.toThrow('already completed');
   });
 
   it('deletes try-on session and handles 204 response', async () => {
@@ -307,7 +307,7 @@ describe('apiTryOnRepository', () => {
     global.fetch.mockResolvedValueOnce(errorResponse({ status: 403, payload: { detail: 'forbidden publish' } }));
     const repository = createApiTryOnRepository();
 
-    await expect(repository.publishTryOnSession(8, {})).rejects.toThrow('Try-on publish request failed: 403 forbidden publish');
+    await expect(repository.publishTryOnSession(8, {})).rejects.toThrow('forbidden publish');
   });
 
   it('extracts backend error using clone().json() when available', async () => {
@@ -323,7 +323,7 @@ describe('apiTryOnRepository', () => {
     global.fetch.mockResolvedValueOnce(response);
     const repository = createApiTryOnRepository();
 
-    await expect(repository.getTryOnSession(77)).rejects.toThrow('Try-on session request failed: 502 clone json detail');
+    await expect(repository.getTryOnSession(77)).rejects.toThrow('Сервис временно недоступен. Попробуйте позже.');
   });
 
   it('falls back from clone().json() to clone().text()', async () => {
@@ -344,7 +344,7 @@ describe('apiTryOnRepository', () => {
     global.fetch.mockResolvedValueOnce(response);
     const repository = createApiTryOnRepository();
 
-    await expect(repository.getTryOnSession(77)).rejects.toThrow('Try-on session request failed: 503 clone text fallback');
+    await expect(repository.getTryOnSession(77)).rejects.toThrow('Сервис временно недоступен. Попробуйте позже.');
   });
 
   it('adds auth header when loading try-on session if token exists', async () => {

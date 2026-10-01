@@ -119,7 +119,9 @@ def test_try_on_initializes_runner_once_and_returns_outputs(monkeypatch):
             executions.append(request)
             return types.SimpleNamespace(outputs=[Image.new("RGB", (20, 30), "white")])
 
-    monkeypatch.setattr(module, "RunOOTDInference", FakeRunner)
+    monkeypatch.setattr(
+        sys.modules["swipeit_ml.application.usecases.run_ootd_inference"], "RunOOTDInference", FakeRunner
+    )
 
     service = module.OOTDService(gpu_id=3)
     first = service.try_on(Image.new("RGB", (10, 10)), Image.new("RGB", (10, 10)), model_type="dc", category=2)

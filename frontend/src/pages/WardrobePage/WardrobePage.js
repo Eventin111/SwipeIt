@@ -122,6 +122,7 @@ const WardrobePage = ({ isEmbedded = false, onBack }) => {
   }, [activeCategory, items]);
 
   const handleRemove = async (garmentId) => {
+    if (!window.confirm('Удалить вещь из гардероба?')) return;
     try {
       await wardrobeRepository.removeByGarmentId(garmentId);
       setItems((prev) => prev.filter((item) => item.garment_id !== garmentId));

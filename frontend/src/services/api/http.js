@@ -1,3 +1,4 @@
+import { guardedFetch } from './guardedFetch';
 import { appConfig } from '../../config/appConfig';
 
 const buildApiUrl = (path) => {
@@ -19,7 +20,7 @@ const toErrorMessage = (payload, fallback) => {
     return fallback;
   }
   if (typeof payload === 'string') {
-    return payload;
+    return fallback;
   }
   if (typeof payload?.detail === 'string') {
     return payload.detail;
@@ -43,32 +44,24 @@ export const apiFetch = async (path, options = {}) => {
     requestHeaders.Authorization = `Bearer ${resolvedToken}`;
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), appConfig.apiRequestTimeoutMs);
-  let response;
+  const response = await guardedFetch(buildApiUrl(path), {
+    ...restOptions,
+    headers: requestHeaders
+  });
 
+  let payload;
   try {
-    response = await fetch(buildApiUrl(path), {
-      ...restOptions,
-      headers: requestHeaders,
-      signal: controller.signal
-    });
+    payload = response.status === 204 ? null : await parseResponsePayload(response);
   } catch (error) {
-    if (error?.name === 'AbortError') {
-      throw new Error(`Превышено время ожидания API (${appConfig.apiRequestTimeoutMs} мс)`);
-    }
-    if (error instanceof TypeError) {
-      throw new Error('Сетевой доступ к API недоступен. Проверь backend, URL и CORS.');
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
+    throw new Error('Не удалось прочитать ответ сервера. Попробуйте позже.');
   }
-
-  const payload = await parseResponsePayload(response);
   if (!response.ok) {
-    const defaultMessage = `HTTP ${response.status}`;
-    throw new Error(toErrorMessage(payload, defaultMessage));
+    const defaultMessage = response.status >= 500
+      ? 'Сервис временно недоступен. Попробуйте позже.'
+      : 'Не удалось выполнить действие. Проверьте данные и попробуйте снова.';
+    const error = new Error(response.status >= 500 ? defaultMessage : toErrorMessage(payload, defaultMessage));
+    error.status = response.status;
+    throw error;
   }
 
   return payload;

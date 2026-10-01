@@ -1,3 +1,4 @@
+import { guardedFetch } from '../../../services/api/guardedFetch';
 import { appConfig } from '../../../config/appConfig';
 import { createUserEntity } from '../../domain/entities/userEntity';
 import { createBrowserStorage } from '../storage/browserStorage';
@@ -38,7 +39,7 @@ export const createApiAuthRepository = (deps = {}) => {
 
     let response;
     try {
-      response = await fetch(buildUrl(path), {
+      response = await guardedFetch(buildUrl(path), {
         ...init,
         headers,
         signal: controller.signal

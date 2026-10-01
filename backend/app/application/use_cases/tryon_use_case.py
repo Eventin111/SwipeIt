@@ -5,6 +5,7 @@ Use Case для виртуальной примерки одежды.
 
 import base64
 import io
+import math
 
 from PIL import Image
 
@@ -51,7 +52,7 @@ class TryOnUseCase:
             raise ValueError("model_type 'hd' (half-body) требует category=0 (upperbody)")
 
         # Валидация числовых параметров
-        if request.scale <= 0 or request.scale > 5:
+        if not math.isfinite(request.scale) or request.scale <= 0 or request.scale > 5:
             raise ValueError("scale должен быть в диапазоне (0, 5]")
 
         if request.num_steps < 1 or request.num_steps > 100:

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, constr
 
 from app.application.dto.tryon_session_dto import TryOnSessionBase, TryOnSessionCreate, TryOnSessionUpdate
 from app.domain.enums.tryon import TryOnEventType, TryOnStatus
@@ -67,10 +67,10 @@ class RecentTryOnList(BaseModel):
 
 
 class PublishTryOnRequest(BaseModel):
-    caption: Optional[str] = None
-    source_type: Optional[str] = None
-    source_post_id: Optional[int] = None
-    hashtags: list[str] = Field(default_factory=list)
+    caption: Optional[str] = Field(None, max_length=2000)
+    source_type: Optional[str] = Field(None, regex=r"^(feed|upload)$")
+    source_post_id: Optional[int] = Field(None, gt=0)
+    hashtags: list[constr(max_length=64)] = Field(default_factory=list, max_items=20)
 
 
 class PublishTryOnResponse(BaseModel):

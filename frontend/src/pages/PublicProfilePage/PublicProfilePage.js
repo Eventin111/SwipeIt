@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useDraft } from '../../hooks/useDraft';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import feedIcon from '../../assets/icons/feed.png';
 import searchIcon from '../../assets/icons/search.png';
@@ -143,6 +144,8 @@ const PublicProfilePage = ({
     text: '',
     error: ''
   });
+  const [commentText, setCommentText] = useDraft(`comment:${user?.id}:${commentsViewer.postId}`);
+  const commentSubmitRef = useRef(false);
   const [guestPrompt, setGuestPrompt] = useState({
     open: false,
     actionLabel: ''
@@ -365,12 +368,13 @@ const PublicProfilePage = ({
   };
 
   const handleSubmitComment = async () => {
+    if (commentSubmitRef.current) return;
     if (user?.isGuest) {
       setGuestPrompt({ open: true, actionLabel: 'оставлять комментарии' });
       return;
     }
     const feedItemId = Number(commentsViewer.postId);
-    const text = String(commentsViewer.text || '').trim();
+    const text = String(commentText || '').trim();
     if (!Number.isInteger(feedItemId) || feedItemId <= 0) {
       return;
     }
@@ -379,9 +383,11 @@ const PublicProfilePage = ({
       return;
     }
 
+    commentSubmitRef.current = true;
     setCommentsViewer((prev) => ({ ...prev, submitting: true, error: '' }));
     try {
       const created = await feedRepository.addFeedItemComment(feedItemId, { text });
+      setCommentText('');
       setCommentsViewer((prev) => ({
         ...prev,
         items: [...(Array.isArray(prev.items) ? prev.items : []), created],
@@ -399,6 +405,8 @@ const PublicProfilePage = ({
         submitting: false,
         error: submitError?.message || 'Не удалось отправить комментарий'
       }));
+    } finally {
+      commentSubmitRef.current = false;
     }
   };
 
@@ -706,9 +714,11 @@ const PublicProfilePage = ({
             )}
             <div className="public-profile__comment-form">
               <textarea
-                value={commentsViewer.text}
+                maxLength={1000}
+                  disabled={commentsViewer.submitting}
+                  value={commentText}
                 placeholder="Оставьте комментарий..."
-                onChange={(event) => setCommentsViewer((prev) => ({ ...prev, text: event.target.value }))}
+                onChange={(event) => setCommentText(event.target.value)}
               />
               <button type="button" className="edit-profile-btn" onClick={() => { void handleSubmitComment(); }} disabled={commentsViewer.submitting}>
                 {commentsViewer.submitting ? '...' : 'Отправить'}

@@ -1,3 +1,4 @@
+import { useDraft } from '../../hooks/useDraft';
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ProfilePage from '../ProfilePage/ProfilePage';
@@ -282,6 +283,8 @@ const FeedPage = () => {
     text: '',
     replyTo: null
   });
+  const [commentText, setCommentText] = useDraft(`comment:${user?.id}:${commentsPanel.postId}`);
+  const commentSubmitRef = useRef(false);
   const [likesPanel, setLikesPanel] = useState({
     open: false,
     title: '',
@@ -970,6 +973,7 @@ const FeedPage = () => {
   };
 
   const handleComment = async (postId) => {
+    if (commentSubmitRef.current) return;
     if (!requireNotGuest('оставлять комментарии')) {
       return;
     }
@@ -1017,11 +1021,12 @@ const FeedPage = () => {
   };
 
   const handleSubmitComment = async () => {
+    if (commentSubmitRef.current) return;
     if (!requireNotGuest('оставлять комментарии')) {
       return;
     }
     const postId = Number(commentsPanel.postId);
-    const text = String(commentsPanel.text || '').trim();
+    const text = String(commentText || '').trim();
     if (!Number.isInteger(postId) || postId <= 0) {
       return;
     }
@@ -1033,6 +1038,7 @@ const FeedPage = () => {
       return;
     }
 
+    commentSubmitRef.current = true;
     setCommentsPanel((prev) => ({
       ...prev,
       submitting: true,
@@ -1041,6 +1047,7 @@ const FeedPage = () => {
 
     try {
       const created = await feedRepository.addFeedItemComment(postId, { text });
+      setCommentText('');
       setCommentsPanel((prev) => {
         const nextItems = [...(Array.isArray(prev.items) ? prev.items : []), created];
         return {
@@ -1063,6 +1070,8 @@ const FeedPage = () => {
         submitting: false,
         error: error?.message || 'Не удалось отправить комментарий'
       }));
+    } finally {
+      commentSubmitRef.current = false;
     }
   };
 
@@ -1075,6 +1084,7 @@ const FeedPage = () => {
       return;
     }
     const mention = `@${username}, `;
+    setCommentText(`${mention}${String(commentText).replace(/^@\S+,\s*/, '')}`);
     setCommentsPanel((prev) => {
       const currentText = String(prev.text || '');
       const cleanedText = currentText.replace(/^@\S+,\s*/, '');
@@ -1090,6 +1100,7 @@ const FeedPage = () => {
   };
 
   const clearReplyTarget = () => {
+    setCommentText(String(commentText).replace(/^@\S+,\s*/, ''));
     setCommentsPanel((prev) => ({
       ...prev,
       replyTo: null,
@@ -1697,9 +1708,11 @@ const FeedPage = () => {
 
             <div className="feed-comment-form">
               <textarea
-                value={commentsPanel.text}
+                maxLength={1000}
+                  disabled={commentsPanel.submitting}
+                  value={commentText}
                 placeholder={commentsPanel.replyTo ? `Ответ для @${commentsPanel.replyTo.username}...` : 'Оставьте комментарий...'}
-                onChange={(event) => setCommentsPanel((prev) => ({ ...prev, text: event.target.value }))}
+                onChange={(event) => setCommentText(event.target.value)}
               />
               <button
                 type="button"

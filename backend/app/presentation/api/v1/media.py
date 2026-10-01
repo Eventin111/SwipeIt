@@ -1,5 +1,4 @@
 import logging
-import os
 import uuid
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.upload_validation import read_validated_image
 from app.infrastructure.auth.security import get_current_user
 from app.infrastructure.db.db import get_db
 from app.infrastructure.persistence.repositories.media_repo import MediaRepository
@@ -18,16 +18,6 @@ from app.presentation.api.schemas.user import UserResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# Разрешенные MIME types
-ALLOWED_CONTENT_TYPES = {
-    "image/jpeg": MediaType.IMAGE,
-    "image/png": MediaType.IMAGE,
-    "image/gif": MediaType.IMAGE,
-    "image/webp": MediaType.IMAGE,
-    "image/heic": MediaType.IMAGE,
-    "image/heif": MediaType.IMAGE,
-}
 
 
 def build_media_public_url(media_id: int) -> str:
@@ -65,25 +55,14 @@ async def upload_media(
 ):
     """Загрузка медиа файла (работает с S3 и без S3)"""
 
-    # Проверяем тип файла
-    if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неподдерживаемый тип файла. Разрешены: {', '.join(ALLOWED_CONTENT_TYPES.keys())}",
-        )
-
-    # Генерируем уникальное имя файла
-    file_extension = os.path.splitext(file.filename)[1]
+    file_content, file_extension, content_type = await read_validated_image(file)
     unique_filename = f"user_{current_user.id}/{uuid.uuid4()}{file_extension}"
-
-    # Читаем содержимое файла
-    file_content = await file.read()
     local_file_path = build_local_media_path(unique_filename)
     local_file_path.parent.mkdir(parents=True, exist_ok=True)
     local_file_path.write_bytes(file_content)
 
     # Определяем тип медиа
-    media_type = ALLOWED_CONTENT_TYPES[file.content_type]
+    media_type = MediaType.IMAGE
 
     # Создаем медиа запись
     media_repo = MediaRepository()
@@ -95,7 +74,7 @@ async def upload_media(
             file_key=unique_filename,
             kind=media_type,
             owner_user_id=current_user.id,
-            content_type=file.content_type,
+            content_type=content_type,
         )
 
         # Формируем URL для ответа
@@ -106,9 +85,11 @@ async def upload_media(
         return MediaUploadResponse(media=media, upload_url=upload_url)
 
     except Exception as e:
+        local_file_path.unlink(missing_ok=True)
         logger.error(f"Ошибка загрузки файла: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ошибка загрузки файла: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Не удалось сохранить фотографию. Попробуйте позже.",
         )
 
 

@@ -7,6 +7,7 @@ export const isValidPassword = (password, minLength = 6) =>
 
 export const isValidUsername = (username, minLength = 3) =>
   String(username || '').trim().length >= minLength &&
+  String(username || '').trim().length <= 50 &&
   /^[a-zA-Z0-9_а-яА-ЯёЁ]+$/.test(String(username || '').trim());
 
 export const isPasswordNotOnlyDigits = (password) =>

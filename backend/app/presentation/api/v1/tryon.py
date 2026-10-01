@@ -7,24 +7,27 @@ import asyncio
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.dto.feed_dto import FeedItemCreate
-from app.application.dto.garment_dto import GarmentCreate
 from app.application.dto.media_dto import MediaType
 from app.application.use_cases.tryon_use_case import TryOnUseCase
 from app.core.config import settings
+from app.core.upload_validation import read_validated_image
 from app.domain.enums.tryon import TryOnEventType, TryOnStatus
 from app.infrastructure.auth.security import get_current_user, get_user_by_token
 from app.infrastructure.cache.tryon_cache import build_tryon_cache_key, get_cached_tryon_result
 from app.infrastructure.cache.tryon_rate_limit import enforce_tryon_rate_limit
+from app.infrastructure.cache.tryon_submission import submit_once
 from app.infrastructure.db.db import AsyncSessionLocal, get_db
 from app.infrastructure.maintenance.tryon_cleanup import run_tryon_cleanup
 from app.infrastructure.maintenance.tryon_recovery import run_tryon_recovery
 from app.infrastructure.ml.ootd_service import get_ootd_service
+from app.infrastructure.persistence.models.feed import FeedItem
+from app.infrastructure.persistence.models.garment import Garment
+from app.infrastructure.persistence.models.tryon import TryOnSession
 from app.infrastructure.persistence.repositories.feed_repo import FeedRepository
-from app.infrastructure.persistence.repositories.garment_repo import GarmentRepository
 from app.infrastructure.persistence.repositories.media_repo import MediaRepository
 from app.infrastructure.persistence.repositories.tryon_event_repo import TryOnEventRepository
 from app.infrastructure.persistence.repositories.tryon_repo import TryOnRepository
@@ -52,6 +55,8 @@ router = APIRouter()
 
 
 def get_tryon_use_case() -> TryOnUseCase:
+    if not settings.TRYON_ENABLED:
+        raise HTTPException(status_code=503, detail="Примерка отключена в этом окружении. Остальные функции доступны.")
     ml_service = get_ootd_service()
     return TryOnUseCase(ml_service)
 
@@ -73,78 +78,20 @@ async def enforce_current_user_tryon_rate_limit(
 async def try_on(
     model_image: UploadFile = File(..., description="Фото человека"),
     cloth_image: UploadFile = File(..., description="Фото одежды"),
-    model_type: str = "hd",
-    category: int = 0,
-    scale: float = 2.0,
-    num_steps: int = 20,
-    num_samples: int = 1,
-    seed: int = -1,
+    model_type: str = Form("hd"),
+    category: int = Form(0),
+    scale: float = Form(2.0),
+    num_steps: int = Form(20),
+    num_samples: int = Form(1),
+    seed: int = Form(-1),
     current_user: UserResponse = Depends(enforce_current_user_tryon_rate_limit),
     db: AsyncSession = Depends(get_db),
     use_case: TryOnUseCase = Depends(get_tryon_use_case),
 ):
-    model_bytes = await model_image.read()
-    cloth_bytes = await cloth_image.read()
+    model_bytes, model_extension, model_content_type = await read_validated_image(model_image)
+    cloth_bytes, cloth_extension, cloth_content_type = await read_validated_image(cloth_image)
 
-    media_repo = MediaRepository()
-    event_repo = TryOnEventRepository()
-    tryon_repo = TryOnRepository()
-
-    def build_file_key(kind: str, filename: str) -> str:
-        extension = os.path.splitext(filename or "")[1] or ".png"
-        return f"user_{current_user.id}/tryon/{kind}/{uuid.uuid4()}{extension}"
-
-    async def persist_media(file_bytes: bytes, file_name: str, content_type: str) -> int:
-        media = await media_repo.create_with_upload(
-            db,
-            file_content=file_bytes,
-            file_key=build_file_key("input", file_name),
-            kind=MediaType.IMAGE,
-            owner_user_id=current_user.id,
-            content_type=content_type or "image/png",
-        )
-        return media.id
-
-    try:
-        use_case.validate_payload(
-            model_type=model_type,
-            category=category,
-            scale=scale,
-            num_steps=num_steps,
-            num_samples=num_samples,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    avatar_media_id = await persist_media(
-        model_bytes,
-        model_image.filename or "model.png",
-        model_image.content_type or "image/png",
-    )
-    cloth_media_id = await persist_media(
-        cloth_bytes,
-        cloth_image.filename or "cloth.png",
-        cloth_image.content_type or "image/png",
-    )
-
-    session = await tryon_repo.create(
-        db,
-        obj_in=TryOnSessionCreate(
-            garment_id=None,
-            avatar_media_id=avatar_media_id,
-            cloth_media_id=cloth_media_id,
-        ),
-        user_id=current_user.id,
-    )
-    await event_repo.create_event(
-        db,
-        session_id=session.id,
-        event_type=TryOnEventType.QUEUED,
-        attempt=0,
-        details="Try-on session created",
-    )
-
-    cache_key = build_tryon_cache_key(
+    submission_key = build_tryon_cache_key(
         model_bytes=model_bytes,
         cloth_bytes=cloth_bytes,
         model_type=model_type,
@@ -154,39 +101,69 @@ async def try_on(
         num_samples=num_samples,
         seed=seed,
     )
-    cached_result = await get_cached_tryon_result(cache_key)
-    if cached_result and cached_result.get("results"):
-        result_media_id = cached_result.get("result_media_id")
-        await tryon_repo.update_status(
+
+    async def create_session():
+        media_repo = MediaRepository()
+        event_repo = TryOnEventRepository()
+        tryon_repo = TryOnRepository()
+
+        def build_file_key(kind: str, filename: str) -> str:
+            extension = os.path.splitext(filename or "")[1] or ".png"
+            return f"user_{current_user.id}/tryon/{kind}/{uuid.uuid4()}{extension}"
+
+        async def persist_media(file_bytes: bytes, file_name: str, content_type: str) -> int:
+            media = await media_repo.create_with_upload(
+                db,
+                file_content=file_bytes,
+                file_key=build_file_key("input", file_name),
+                kind=MediaType.IMAGE,
+                owner_user_id=current_user.id,
+                content_type=content_type or "image/png",
+            )
+            return media.id
+
+        try:
+            use_case.validate_payload(
+                model_type=model_type,
+                category=category,
+                scale=scale,
+                num_steps=num_steps,
+                num_samples=num_samples,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        avatar_media_id = await persist_media(
+            model_bytes,
+            f"model{model_extension}",
+            model_content_type,
+        )
+        cloth_media_id = await persist_media(
+            cloth_bytes,
+            f"cloth{cloth_extension}",
+            cloth_content_type,
+        )
+
+        session = await tryon_repo.create(
             db,
-            session.id,
-            TryOnStatus.COMPLETED,
-            result_media_id=result_media_id,
+            obj_in=TryOnSessionCreate(
+                garment_id=None,
+                avatar_media_id=avatar_media_id,
+                cloth_media_id=cloth_media_id,
+            ),
+            user_id=current_user.id,
         )
         await event_repo.create_event(
             db,
             session_id=session.id,
-            event_type=TryOnEventType.COMPLETED,
+            event_type=TryOnEventType.QUEUED,
             attempt=0,
-            details="Served from Redis cache",
+            details="Try-on session created",
         )
-        return {
-            "success": True,
-            "queued": False,
-            "status": TryOnStatus.COMPLETED,
-            "results": cached_result["results"],
-            "count": len(cached_result["results"]),
-            "session_id": session.id,
-            "result_media_id": result_media_id,
-            "cached": True,
-        }
 
-    try:
-        task = build_tryon_task_payload(
-            session_id=session.id,
-            user_id=current_user.id,
-            avatar_media_id=avatar_media_id,
-            cloth_media_id=cloth_media_id,
+        cache_key = build_tryon_cache_key(
+            model_bytes=model_bytes,
+            cloth_bytes=cloth_bytes,
             model_type=model_type,
             category=category,
             scale=scale,
@@ -194,29 +171,71 @@ async def try_on(
             num_samples=num_samples,
             seed=seed,
         )
-        await enqueue_tryon_task(task)
-    except Exception as exc:
-        await tryon_repo.update_status(db, session.id, TryOnStatus.FAILED, error_text=str(exc))
-        await event_repo.create_event(
-            db,
-            session_id=session.id,
-            event_type=TryOnEventType.FAILED,
-            attempt=0,
-            error_text=str(exc),
-            details="Failed to enqueue try-on task",
-        )
-        raise HTTPException(status_code=500, detail=f"Ошибка постановки задачи в очередь: {str(exc)}")
+        cached_result = await get_cached_tryon_result(cache_key)
+        if cached_result and cached_result.get("results"):
+            result_media_id = cached_result.get("result_media_id")
+            await tryon_repo.update_status(
+                db,
+                session.id,
+                TryOnStatus.COMPLETED,
+                result_media_id=result_media_id,
+            )
+            await event_repo.create_event(
+                db,
+                session_id=session.id,
+                event_type=TryOnEventType.COMPLETED,
+                attempt=0,
+                details="Served from Redis cache",
+            )
+            return {
+                "success": True,
+                "queued": False,
+                "status": TryOnStatus.COMPLETED,
+                "results": cached_result["results"],
+                "count": len(cached_result["results"]),
+                "session_id": session.id,
+                "result_media_id": result_media_id,
+                "cached": True,
+            }
 
-    return {
-        "success": True,
-        "queued": True,
-        "status": TryOnStatus.QUEUED,
-        "results": [],
-        "count": 0,
-        "session_id": session.id,
-        "result_media_id": None,
-        "cached": False,
-    }
+        try:
+            task = build_tryon_task_payload(
+                session_id=session.id,
+                user_id=current_user.id,
+                avatar_media_id=avatar_media_id,
+                cloth_media_id=cloth_media_id,
+                model_type=model_type,
+                category=category,
+                scale=scale,
+                num_steps=num_steps,
+                num_samples=num_samples,
+                seed=seed,
+            )
+            await enqueue_tryon_task(task)
+        except Exception as exc:
+            await tryon_repo.update_status(db, session.id, TryOnStatus.FAILED, error_text=str(exc))
+            await event_repo.create_event(
+                db,
+                session_id=session.id,
+                event_type=TryOnEventType.FAILED,
+                attempt=0,
+                error_text=str(exc),
+                details="Failed to enqueue try-on task",
+            )
+            raise HTTPException(status_code=500, detail=f"Ошибка постановки задачи в очередь: {str(exc)}")
+
+        return {
+            "success": True,
+            "queued": True,
+            "status": TryOnStatus.QUEUED,
+            "results": [],
+            "count": 0,
+            "session_id": session.id,
+            "result_media_id": None,
+            "cached": False,
+        }
+
+    return await submit_once(f"{current_user.id}:{submission_key}", create_session)
 
 
 @router.get("/sessions/recent", response_model=RecentTryOnList)
@@ -265,23 +284,28 @@ async def publish_tryon_session(
     current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    tryon_repo = TryOnRepository()
-    garment_repo = GarmentRepository()
-    feed_repo = FeedRepository()
-
-    session = await tryon_repo.get(db, session_id)
+    result = await db.execute(select(TryOnSession).where(TryOnSession.id == session_id).with_for_update())
+    session = result.scalar_one_or_none()
     if session is None or session.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Try-on session not found")
+        raise HTTPException(status_code=404, detail="Примерка не найдена")
     if session.status != TryOnStatus.COMPLETED or session.result_media_id is None:
-        raise HTTPException(status_code=400, detail="Примерка еще не завершена")
+        raise HTTPException(status_code=400, detail="Дождитесь завершения примерки перед публикацией.")
 
-    raw_hashtags = [str(tag or "").strip().lstrip("#") for tag in payload.hashtags]
-    normalized_hashtags = [tag for tag in raw_hashtags if tag]
-    garment = await garment_repo.create(
-        db,
-        obj_in=GarmentCreate(
+    existing = await db.execute(
+        select(FeedItem)
+        .join(Garment, FeedItem.garment_id == Garment.id)
+        .where(
+            FeedItem.user_id == current_user.id,
+            Garment.garment_metadata["source_tryon_session_id"].as_integer() == session.id,
+        )
+        .order_by(FeedItem.id)
+        .limit(1)
+    )
+    feed_item = existing.unique().scalar_one_or_none()
+    if feed_item is None:
+        hashtags = list(dict.fromkeys(tag.strip().lstrip("#") for tag in payload.hashtags if tag.strip().lstrip("#")))
+        garment = Garment(
             title=f"Образ #{session.id}",
-            brand=None,
             media_id=session.result_media_id,
             garment_metadata={
                 "source": "tryon",
@@ -290,36 +314,30 @@ async def publish_tryon_session(
                 "cloth_media_id": session.cloth_media_id,
                 "source_type": payload.source_type,
                 "source_post_id": payload.source_post_id,
-                "hashtags": normalized_hashtags,
+                "hashtags": hashtags,
             },
-        ),
-    )
-
-    source_note = ""
-    source_type = str(payload.source_type or "").strip().lower()
-    if source_type == "feed" and payload.source_post_id:
-        source_note = f"\n\nИсточник: пост #{payload.source_post_id}"
-    elif source_type == "upload":
-        source_note = "\n\nИсточник: загруженная пользователем одежда"
-
-    hashtags_text = " ".join(f"#{tag}" for tag in normalized_hashtags)
-    base_caption = (payload.caption or "").strip() or "Мой новый образ после примерки"
-    final_caption = f"{base_caption}{(' ' + hashtags_text) if hashtags_text else ''}{source_note}"
-    feed_item = await feed_repo.create(
-        db,
-        obj_in=FeedItemCreate(
-            garment_id=garment.id,
-            caption=final_caption,
-            media_ids=[],
-        ),
-        user_id=current_user.id,
-    )
-
-    return PublishTryOnResponse(
+        )
+        caption = (payload.caption or "").strip() or "Мой новый образ после примерки"
+        if hashtags:
+            caption += " " + " ".join(f"#{tag}" for tag in hashtags)
+        if payload.source_type == "feed" and payload.source_post_id:
+            caption += f"\n\nИсточник: пост #{payload.source_post_id}"
+        elif payload.source_type == "upload":
+            caption += "\n\nИсточник: загруженная пользователем одежда"
+        if len(caption) > 2000:
+            raise HTTPException(400, "Подпись вместе с хештегами и источником должна быть не длиннее 2000 символов.")
+        db.add(garment)
+        await db.flush()
+        feed_item = FeedItem(user_id=current_user.id, garment_id=garment.id, caption=caption)
+        db.add(feed_item)
+        await db.flush()
+    response = PublishTryOnResponse(
         feed_item_id=feed_item.id,
-        garment_id=garment.id,
+        garment_id=feed_item.garment_id,
         image_url=_build_media_file_url(session.result_media_id),
     )
+    await db.commit()
+    return response
 
 
 @router.delete("/sessions/{session_id}")
